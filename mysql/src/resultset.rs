@@ -162,7 +162,7 @@ impl<'a, W: AsyncWrite + Unpin> QueryResultWriter<'a, W> {
     /// Note that if no columns are emitted, any written rows are ignored.
     ///
     /// See [`RowWriter`](struct.RowWriter.html).
-    pub async fn start(mut self, columns: &'a [Column]) -> io::Result<RowWriter<'a, W>> {
+    pub async fn start<'b>(mut self, columns: &'b [Column]) -> io::Result<RowWriter<'a, 'b, W>> {
         self.finalize(true).await?;
         RowWriter::new(self, columns).await
     }
@@ -215,12 +215,12 @@ impl<'a, W: AsyncWrite + Unpin> QueryResultWriter<'a, W> {
 /// if an I/O error occurs when sending the end-of-records marker to the client. To avoid this,
 /// call [`finish`](struct.RowWriter.html#method.finish) explicitly.
 #[must_use]
-pub struct RowWriter<'a, W: AsyncWrite + Unpin> {
+pub struct RowWriter<'a, 'b, W: AsyncWrite + Unpin> {
     client_capabilities: CapabilityFlags,
     result: Option<QueryResultWriter<'a, W>>,
     bitmap_len: usize,
     data: Vec<u8>,
-    columns: &'a [Column],
+    columns: &'b [Column],
 
     // next column to write for the current row
     // NOTE: (ab)used to track number of *rows* for a zero-column resultset
@@ -228,14 +228,14 @@ pub struct RowWriter<'a, W: AsyncWrite + Unpin> {
     finished: bool,
 }
 
-impl<'a, W> RowWriter<'a, W>
+impl<'a, 'b, W> RowWriter<'a, 'b, W>
 where
     W: 'a + AsyncWrite + Unpin,
 {
     async fn new(
         result: QueryResultWriter<'a, W>,
-        columns: &'a [Column],
-    ) -> io::Result<RowWriter<'a, W>> {
+        columns: &'b [Column],
+    ) -> io::Result<RowWriter<'a, 'b, W>> {
         let bitmap_len = (columns.len() + 7 + 2) / 8;
         let client_capabilities = result.client_capabilities;
         let mut rw = RowWriter {
@@ -370,7 +370,7 @@ where
     }
 }
 
-impl<'a, W: AsyncWrite + Unpin + 'a> RowWriter<'a, W> {
+impl<'a, 'b, W: AsyncWrite + Unpin + 'a> RowWriter<'a, 'b, W> {
     async fn finish_inner(&mut self, extra_info: &str, complete: bool) -> io::Result<()> {
         if self.finished {
             return Ok(());
